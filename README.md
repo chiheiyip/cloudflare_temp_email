@@ -45,13 +45,165 @@
 - **Agent 友好** - 内置邮箱 [`skill`](skills/cf-temp-mail-agent-mail/SKILL.md)，方便 AI agent 使用邮箱
 - **移动端管理** - 社区客户端 [CloudMail](https://github.com/Lur1N77777/CloudMail)，支持 Android 管理后台和邮箱管理
 
-## 部署文档 - 快速开始
+## 部署文档 — 从零到上线（一步不跳）
 
-[部署文档](https://temp-mail-docs.awsl.uk) | [Github Action 部署文档](https://temp-mail-docs.awsl.uk/zh/guide/actions/github-action.html)
+> 💡 也可以看详细文档：[temp-mail-docs.awsl.uk](https://temp-mail-docs.awsl.uk) | [Github Action 部署文档](https://temp-mail-docs.awsl.uk/zh/guide/actions/github-action.html)
 
 <a href="https://temp-mail-docs.awsl.uk/zh/guide/actions/github-action.html">
   <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare Workers" height="32">
 </a>
+
+### 第 0 步：你需要什么
+
+- 一个 [Cloudflare 账号](https://dash.cloudflare.com/)（免费）
+- 一个你自己的域名，DNS 托管在 Cloudflare（如 `mail.mydomain.com`）
+- 一个 [GitHub 账号](https://github.com/)（免费）
+
+---
+
+### 第 1 步：Fork 仓库
+
+点击右上角 **Fork**，把这个仓库 fork 到你自己的 GitHub 账号下。
+
+---
+
+### 第 2 步：在 Cloudflare 创建资源
+
+打开 [Cloudflare Dashboard](https://dash.cloudflare.com/)，创建以下三个资源：
+
+#### 2a. 创建 D1 数据库
+
+左侧菜单 → **Workers & Pages** → **D1** → **创建数据库**
+
+- 数据库名称：`temp-email-db`（可以随意取名）
+- 创建后记下 **数据库 ID**（一串 UUID）
+
+#### 2b. 创建 KV 命名空间
+
+左侧菜单 → **Workers & Pages** → **KV** → **创建命名空间**
+
+- 命名空间名称：`temp-email-kv`（可以随意取名）
+- 创建后记下 **命名空间 ID**（一串 UUID）
+
+#### 2c. 创建 API Token
+
+右上角我的头像 → **我的个人资料** → **API 令牌** → **创建令牌**
+
+选择「创建自定义令牌」，权限设置：
+- **Account / Workers KV Storage**：编辑
+- **Account / D1**：编辑
+- **Account / Workers Scripts**：编辑
+
+记下生成的 **API Token**。
+
+#### 2d. 找到账户 ID
+
+Cloudflare Dashboard 首页右下角，或者 URL 里 `dash.cloudflare.com/` 后面那串就是 **账户 ID**。
+
+---
+
+### 第 3 步：配置 GitHub Secrets
+
+打开你 fork 后的仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，逐一添加以下 4 个 Secrets：
+
+| Secret 名称 | 如何获取 |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | 第 2d 步记下的账户 ID 填入 |
+| `CLOUDFLARE_API_TOKEN` | 第 2c 步记下的 API Token 填入 |
+| `USE_WORKER_ASSETS` | 填入 `true` |
+| `BACKEND_TOML` | 见下方模板 ⬇️ |
+
+#### `BACKEND_TOML` 模板
+
+把下面内容中所有 `***` 替换成你的实际值，然后整段复制粘贴到 Secret 里：
+
+```toml
+name = "temp-email"
+main = "src/worker.ts"
+compatibility_date = "2025-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "../frontend/dist/"
+binding = "ASSETS"
+run_worker_first = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "***"
+database_id = "***"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "***"
+
+[vars]
+DOMAIN = "***"
+DOMAINS = ["***"]
+DEFAULT_DOMAINS = ["***"]
+JWT_SECRET = "***"
+DEFAULT_LANG = "zh-CN"
+
+[[routes]]
+pattern = "***/*"
+zone_name = "***"
+```
+
+**字段说明**：
+
+| 字段 | 说明 | 示例 |
+|---|---|---|
+| `database_name` | D1 数据库名称 | `temp-email-db` |
+| `database_id` | D1 数据库 UUID | `85872f53-...` |
+| `KV id` | KV 命名空间 UUID | `158b8e4e...` |
+| `DOMAIN` | 你的主域名 | `mail.mydomain.com` |
+| `DOMAINS` | 域名列表（用于邮箱地址生成） | `["mail.mydomain.com"]` |
+| `DEFAULT_DOMAINS` | 默认域名列表 | `["mail.mydomain.com"]` |
+| `JWT_SECRET` | 随机密钥（建议 32 位以上） | 随机生成 |
+| `pattern` | Worker 路由匹配 | `mail.mydomain.com/*` |
+| `zone_name` | 你的 Cloudflare 区域名 | `mydomain.com` |
+
+> ⚠️ **务必不要漏掉 `[assets]` 配置块**（第 6-9 行）。没有它，部署后访问域名只显示 `ok` 两个字，看不到前端页面。
+
+---
+
+### 第 4 步：触发部署
+
+打开仓库 → **Actions** → 左侧选择 **Deploy Backend** → 右侧 **Run workflow** → Branch 选 `main` → **Run workflow**。
+
+然后等它跑完（通常 2-3 分钟）。
+
+---
+
+### 第 5 步：验证
+
+浏览器访问你的域名（如 `https://mail.mydomain.com`）。
+
+✅ **成功**：看到完整的前端登录页面
+❌ **失败**：只显示 `ok` 两个字 → **回到第 3 步，检查 `BACKEND_TOML` 有没有 `[assets]` 配置块，检查 `USE_WORKER_ASSETS` 是否是 `true`**
+
+---
+
+### ⚠️ 常见踩坑
+
+<details>
+<summary>展开查看常见问题</summary>
+
+**部署后只显示 `ok`？**
+> `BACKEND_TOML` 里没有 `[assets]` 配置块，或者 `USE_WORKER_ASSETS` 不是 `true`。
+
+**应该跑哪个 Workflow？**
+> 新手只跑 `Deploy Backend`。`Deploy Frontend` 和 `Deploy Frontend with page function` 都需要额外配置 Cloudflare Pages，暂不需要。
+
+**Workflow 报 `fatal: couldn't find remote ref`？**
+> 如果你通过 push tag 触发 workflow 后立即删了 tag，Actions 可能还没 fetch 到。等跑完再删。
+
+**后续前端更新怎么部署？**
+> 改完前端代码后，重新跑 `Deploy Backend` workflow 即可——它会自动构建前端并跟 Worker 一起部署。
+
+</details>
+
+---
 
 ## 更新日志
 
@@ -86,7 +238,7 @@
 <summary>目录（点击收缩/展开）</summary>
 
 - [Cloudflare 临时邮箱 - 免费搭建临时邮件服务](#cloudflare-临时邮箱---免费搭建临时邮件服务)
-  - [部署文档 - 快速开始](#部署文档---快速开始)
+  - [部署文档 — 从零到上线（一步不跳）](#部署文档--从零到上线一步不跳)
   - [更新日志](#更新日志)
   - [在线体验](#在线体验)
   - [核心功能](#核心功能)
@@ -99,6 +251,7 @@
     - [系统架构](#系统架构)
     - [技术栈](#技术栈)
     - [主要组件](#主要组件)
+  - [常见踩坑](#常见踩坑)
   - [加入社区](#加入社区)
 
 </details>
