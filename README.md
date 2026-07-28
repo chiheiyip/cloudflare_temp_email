@@ -198,6 +198,40 @@ nslookup -qt="mx" a.b.com 1.1.1.1
 ```
 进行验证。 
 
+## 常见问题（FAQ）
+
+### 部署后访问域名只显示 `ok`，看不到前端页面
+
+**根因**：`wrangler.toml` 缺少 `[assets]` 配置，Worker 不知道要 serve 前端静态文件。
+
+**解决**：在仓库 Secrets → Actions 的 `BACKEND_TOML` 中确保包含以下 `[assets]` 配置块：
+
+```toml
+[assets]
+directory = "../frontend/dist/"
+binding = "ASSETS"
+run_worker_first = true
+```
+
+同时确保 `USE_WORKER_ASSETS` secret 设为 `true`。
+
+### 应该跑哪个 Workflow？
+
+- ✅ **新手推荐**：`Deploy Backend` — 自动构建前端 + 部署 Worker，Worker 自己 serve 完整页面
+- ❌ `Deploy Frontend` — 推送到 Cloudflare Pages，需要额外配置 Pages 项目 + Pages 权限
+- ❌ `Deploy Frontend with page function` — 使用 Pages Functions，同样需要 Pages 相关配置
+
+### 部署后看不到变化？
+
+1. 确认 `USE_WORKER_ASSETS` = `true`
+2. 确认 `BACKEND_TOML` 中有 `[assets]` 配置块
+3. 确认跑的是 `Deploy Backend` workflow（不是前端 workflow）
+4. 等 workflow 完全跑完再刷新页面
+
+### 为什么 Workflow 报 `fatal: couldn't find remote ref`？
+
+如果你通过 push tag 触发 workflow 后立即删除了 tag，GitHub Actions runner 可能还没 fetch 到 tag。等 workflow 跑完再删 tag。
+
 ## 加入社区
 
 - [Telegram](https://t.me/cloudflare_temp_email)
